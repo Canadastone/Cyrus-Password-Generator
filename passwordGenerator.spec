@@ -5,7 +5,7 @@ a = Analysis(
     ['passwordGenerator.py'],
     pathex=[],
     binaries=[],
-    datas=[],
+    datas=[('key.ico', '.')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},

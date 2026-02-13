@@ -16,6 +16,8 @@ from tkinter import filedialog
 from tkinter import ttk
 import sv_ttk
 import os
+import sys
+from cryptography.fernet import Fernet
 
 def generatePassword(size, specialChars, digitsChars,  upperChars, lowerChars):      # Generates a random password based on the given criteria
     
@@ -93,10 +95,145 @@ def exportPasswords(passwords):                # Exports the saved passwords to 
         messagebox.showerror("Export Failed", f"Failed to export passwords:\n{str(e)}")
         print(f"Error exporting passwords: {e}")
 
+def encryptFile(file_path):
+
+    result = messagebox.askyesno("Encrypt File", "Does this file already have an encryption key? If not, a new key will be generated and you will be prompted to save it.")
+    
+    if result == False:
+        # Generate a new encryption key
+        messagebox.showinfo("Save Key File", "Please choose a location to save the new encryption key.\nNote: You will need this key to decrypt the file later, so keep it in a safe place.")
+        key = Fernet.generate_key()
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        key_path = filedialog.asksaveasfilename(
+            initialdir=script_dir,
+            initialfile="file_key.key",
+            defaultextension=".key",
+            filetypes=[("Key files", "*.key"), ("All files", "*.*")]
+        )
+        
+        if not key_path:  # User cancelled
+            messagebox.showwarning("Encryption Cancelled", "No key file selected. Encryption cancelled.")
+            return
+        
+        # Save the new encryption key to a file
+        with open(key_path, "wb") as key_file:
+            key_file.write(key)
+    else:
+        # Use an existing encryption key
+        messagebox.showinfo("Select Key File", "Please select the existing key file to use for encryption.")
+        key_path = filedialog.askopenfilename(title="Select existing key file", filetypes=[("Key files", "*.key"), ("All files", "*.*")])
+        if not key_path:
+            messagebox.showwarning("No Key Selected", "No key file selected. Encryption cancelled.")
+            return
+        
+        # Read the existing encryption key from the file
+        with open(key_path, "rb") as key_file:
+            key = key_file.read()
+
+    fernet = Fernet(key)  # Create a Fernet object with the encryption key
+
+    with open(file_path, "rb") as original_file:
+        original = original_file.read()  # Read the original file data
+
+    encrypted = fernet.encrypt(original)  # Encrypt the file data
+
+    with open(file_path, "wb") as encrypted_file:
+        encrypted_file.write(encrypted)  # Write the encrypted data back to the file
+
+    messagebox.showinfo("Encryption Successful", f"File encrypted successfully.\nEncryption key saved to:\n{key_path}")
+    
+def decryptFile(file_path, key_path):
+    
+    with open(key_path, "rb") as key_file:
+        key = key_file.read()  # Read the encryption key from the file
+
+    fernet = Fernet(key)  # Create a Fernet object with the encryption key
+
+    with open(file_path, "rb") as encrypted_file:
+        encrypted = encrypted_file.read()  # Read the encrypted file data
+
+    try:
+        decrypted = fernet.decrypt(encrypted)  # Decrypt the file data
+    except Exception as e:
+        messagebox.showerror("Decryption Failed", f"Failed to decrypt file:\n{str(e)}")
+        print(f"Error decrypting file: {e}")
+        return
+
+    with open(file_path, "wb") as decrypted_file:
+        decrypted_file.write(decrypted)  # Write the decrypted data back to the file
+
+    messagebox.showinfo("Decryption Successful", "File decrypted successfully.")
+
+def encryptFilePrompt():    # Wrapper function that shows info message before prompting for file selection
+    
+    message = """You will be asked to:
+
+1. Select the file you want to encrypt
+2. Choose if you have an existing encryption key
+3. If NO: Choose where to save a new encryption key
+4. If YES: Select your existing key file
+
+The selected file will be encrypted and overwritten.
+
+IMPORTANT: Keep your encryption key safe - you'll need it to decrypt the file!"""
+    
+    result = messagebox.askokcancel("Encrypt File", message)
+    
+    if not result:
+        messagebox.showwarning("Encryption Cancelled", "Encryption cancelled by user.")
+        return
+
+    file_path = filedialog.askopenfilename(title="Select file to encrypt")
+    
+    if file_path:
+        encryptFile(file_path)
+    else:
+        messagebox.showwarning("No File Selected", "No file selected. Encryption cancelled.")
+
+def decryptFilePrompt():    # Wrapper function that shows info message before prompting for file selection
+    
+    message = """You will be asked to:
+
+1. Select the encrypted file you want to decrypt
+2. Select the encryption key file (.key) for that file
+
+The encrypted file will be decrypted and overwritten with the original content.
+
+Make sure you select the correct key file!"""
+    
+    result = messagebox.askokcancel("Decrypt File", message)
+    
+    if not result:
+        messagebox.showwarning("Decryption Cancelled", "Decryption cancelled by user.")
+        return
+
+    file_path = filedialog.askopenfilename(title="Select file to decrypt")
+    if file_path:
+        key_path = filedialog.askopenfilename(title="Select key file", filetypes=[("Key files", "*.key"), ("All files", "*.*")])
+        if key_path:
+            decryptFile(file_path, key_path)
+    else:
+        messagebox.showwarning("No File Selected", "No file selected. Decryption cancelled.")
+
+def resource_path(relative_path):   # Gets the absolute path to icon file
+
+    try:
+        # PyInstaller creates a temp folder and stores path in _MEIPASS
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.dirname(os.path.abspath(__file__))
+    return os.path.join(base_path, relative_path)
+
 root = tk.Tk()
 root.geometry("600x300")                        # Main window setup
 root.title("Cyrus' Password Generator")
-root.iconbitmap("key.ico")                      # Set the window icon (make sure 'key.ico' is in the same directory as this script)
+
+
+try:                                        # Set the window icon using resource path
+    icon_path = resource_path("key.ico")
+    root.iconbitmap(icon_path)
+except:
+    pass                                    # Continue without icon if file not found
 
 root.columnconfigure(0, weight=1)
 root.rowconfigure(0, weight=1)
@@ -149,8 +286,14 @@ clearBut.grid(row=5, column=4)      # Clears all saved passwords from the listbo
 exportBut = tk.Button(frame, text="Export", cursor="hand2", command=lambda: exportPasswords(passList.get(0, tk.END)))
 exportBut.grid(row=6, column=4)     # Exports the saved passwords to a text file when clicked, prompting the user to choose a location and filename
 
+encryptBut = tk.Button(frame, text="Encrypt", cursor="hand2", command=encryptFilePrompt)
+encryptBut.grid(row=7, column=4)    # Prompts the user to select a file to encrypt and then encrypts it using the Fernet encryption method when clicked
+
+decrtyptBut = tk.Button(frame, text="Decrypt", cursor="hand2", command=decryptFilePrompt)
+decrtyptBut.grid(row=8, column=4)   # Prompts the user to select a file to decrypt and a key file, then decrypts the selected file using the Fernet decryption method when clicked
+
 passList = tk.Listbox(frame)                # Listbox to display saved passwords, allowing the user to see and manage their saved passwords
-passList.grid(row=4, column=0, columnspan=4, rowspan=3, sticky="ew")
+passList.grid(row=4, column=0, columnspan=4, rowspan=5, sticky="ew")
 passList.configure(bg="lightyellow")
 
 
